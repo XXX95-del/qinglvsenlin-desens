@@ -25,6 +25,32 @@ export interface InterceptorConfig {
 }
 
 // ============================================================
+// 工具函数
+// ============================================================
+
+/**
+ * 从请求 URL 中提取 caseId
+ * 支持路径模式：/api/cases/{caseId} 或 /api/cases/{caseId}/...
+ * @returns caseId 或 null
+ */
+function extractCaseIdFromUrl(url: string): string | null {
+  try {
+    const path = new URL(url, window.location.origin).pathname;
+    const match = path.match(/\/api\/cases\/([^/]+)/);
+    if (match && match[1]) {
+      const caseId = decodeURIComponent(match[1]);
+      // 过滤掉明显不是 caseId 的路径段
+      if (caseId !== 'undefined' && caseId !== 'null' && caseId.length > 0) {
+        return caseId;
+      }
+    }
+  } catch {
+    // URL 解析失败，忽略
+  }
+  return null;
+}
+
+// ============================================================
 // 拦截器
 // ============================================================
 
@@ -69,13 +95,20 @@ export class AuthInterceptor {
         return originalFetch(input, init);
       }
 
+      // 从 URL 提取 caseId，实现跨案件隔离
+      const caseId = extractCaseIdFromUrl(url);
+      const effectiveOptions: DesensitizeOptions = {
+        ...self.config.desensitizeOptions,
+        ...(caseId ? { caseId } : {}),
+      };
+
       // 对 POST/PUT/PATCH 请求体脱敏
       if (['POST', 'PUT', 'PATCH'].includes(method) && init?.body) {
         try {
           const bodyObj = JSON.parse(init.body as string);
           const desensitized = self.engine.desensitizeObject(
             bodyObj,
-            self.config.desensitizeOptions
+            effectiveOptions
           );
           init = {
             ...init,

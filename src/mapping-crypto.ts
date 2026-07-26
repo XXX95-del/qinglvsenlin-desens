@@ -173,11 +173,23 @@ export function deserializePayload(serialized: string): EncryptedPayload {
 
 let sessionKey: CryptoKey | null = null;
 
+const SESSION_KEY_STORAGE = '__desens_session_key__';
+
 /**
  * 设置会话密钥（登录时调用）
+ * 同时将密钥导出并持久化到 sessionStorage，支持页面刷新后恢复
  */
-export function setSessionKey(key: CryptoKey): void {
+export async function setSessionKey(key: CryptoKey): Promise<void> {
   sessionKey = key;
+  try {
+    const rawKey = await crypto.subtle.exportKey('raw', key);
+    const keyB64 = arrayBufferToBase64(rawKey);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(SESSION_KEY_STORAGE, keyB64);
+    }
+  } catch (e) {
+    console.warn('Failed to persist session key:', e);
+  }
 }
 
 /**
@@ -188,10 +200,49 @@ export function getSessionKey(): CryptoKey | null {
 }
 
 /**
+ * 从 sessionStorage 恢复会话密钥（页面刷新后调用）
+ * @returns 是否成功恢复
+ */
+export async function restoreSessionKey(): Promise<boolean> {
+  if (sessionKey) return true;
+  if (typeof sessionStorage === 'undefined') return false;
+
+  const stored = sessionStorage.getItem(SESSION_KEY_STORAGE);
+  if (!stored) return false;
+
+  try {
+    const rawKey = base64ToArrayBuffer(stored);
+    sessionKey = await crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+    return true;
+  } catch (e) {
+    console.warn('Failed to restore session key:', e);
+    sessionStorage.removeItem(SESSION_KEY_STORAGE);
+    return false;
+  }
+}
+
+/**
+ * 检查会话密钥是否就绪（模块变量或 sessionStorage 中可用）
+ */
+export function isSessionKeyReady(): boolean {
+  return sessionKey !== null;
+}
+
+/**
  * 清除会话密钥（登出时调用）
+ * 同时清除 sessionStorage 中的持久化数据
  */
 export function clearSessionKey(): void {
   sessionKey = null;
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(SESSION_KEY_STORAGE);
+  }
 }
 
 // ============================================================

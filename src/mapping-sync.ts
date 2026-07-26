@@ -13,6 +13,8 @@ import {
   setSessionKey,
   clearSessionKey,
   getSessionKey,
+  restoreSessionKey,
+  isSessionKeyReady,
   type EncryptedPayload,
 } from './mapping-crypto';
 
@@ -65,7 +67,7 @@ export async function onLogin(
   }
 
   // 仅在成功拉取并解密后才设置会话密钥，避免半初始化状态
-  setSessionKey(key);
+  await setSessionKey(key);
 
   return mappings;
 }
@@ -96,4 +98,46 @@ export async function onMappingChange(
  */
 export function onLogout(): void {
   clearSessionKey();
+}
+
+/**
+ * 从 sessionStorage 恢复会话密钥，并拉取云端映射
+ * 适用于页面刷新后的场景：密钥从 sessionStorage 恢复，映射从云端重新拉取
+ * @param syncAdapter 同步适配器
+ * @returns 解密后的映射条目列表（恢复失败返回空数组）
+ */
+export async function restoreFromSession(
+  syncAdapter: SyncAdapter
+): Promise<MappingEntry[]> {
+  // 先从 sessionStorage 恢复密钥
+  const restored = await restoreSessionKey();
+  if (!restored) {
+    return [];
+  }
+
+  const key = getSessionKey();
+  if (!key) {
+    return [];
+  }
+
+  // 拉取云端加密数据
+  try {
+    const encryptedPayloads = await syncAdapter.fetchMappings();
+
+    const mappings: MappingEntry[] = [];
+    for (const payload of encryptedPayloads) {
+      try {
+        const json = await decrypt(payload, key);
+        const entries = JSON.parse(json) as MappingEntry[];
+        mappings.push(...entries);
+      } catch (error) {
+        console.error('Failed to decrypt mapping during restore:', error);
+      }
+    }
+
+    return mappings;
+  } catch (error) {
+    console.error('Failed to fetch mappings during restore:', error);
+    return [];
+  }
 }

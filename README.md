@@ -115,7 +115,7 @@ const placeholder = generatePlaceholder(); // 例如 "a8f3d9e2"
 AES-256-GCM 认证加密 + PBKDF2 密钥派生。
 
 ```typescript
-import { deriveKeyFromPassword, encrypt, decrypt, setSessionKey, clearSessionKey } from './mapping-crypto';
+import { deriveKeyFromPassword, encrypt, decrypt, setSessionKey, clearSessionKey, restoreSessionKey, isSessionKeyReady } from './mapping-crypto';
 
 // 从密码派生密钥
 const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -130,6 +130,11 @@ const decrypted = await decrypt(encrypted, key);
 // 会话密钥管理
 setSessionKey(key);
 // ... 使用会话密钥 ...
+
+// 页面刷新后从 sessionStorage 恢复密钥
+await restoreSessionKey();
+isSessionKeyReady(); // true
+
 clearSessionKey(); // 登出时销毁
 ```
 
@@ -149,10 +154,13 @@ console.log(metadata.role); // "plaintiff"
 加密映射表的上传与拉取，支持多设备登录。
 
 ```typescript
-import { onLogin, onMappingChange, onLogout } from './mapping-sync';
+import { onLogin, onMappingChange, onLogout, restoreFromSession } from './mapping-sync';
 
 // 登录时：派生密钥 + 拉取云端映射 + 解密入缓存
 await onLogin('user-password');
+
+// 页面刷新后：从 sessionStorage 恢复密钥 + 拉取云端映射
+await restoreFromSession();
 
 // 映射变更时：加密 + 上传云端
 await onMappingChange({ caseId: 'case-001', mappings: [...] });
@@ -163,7 +171,7 @@ onLogout();
 
 ### 全局拦截器 (`auth-interceptor.ts`)
 
-自动拦截全局 `fetch` 请求，对请求体脱敏、响应体还原。
+自动拦截全局 `fetch` 请求，对请求体脱敏、响应体还原。**自动从 URL 提取 caseId**，确保跨案件隔离在拦截器层面生效。
 
 ```typescript
 import { AuthInterceptor } from './auth-interceptor';
@@ -175,7 +183,9 @@ const interceptor = new AuthInterceptor({
 });
 
 interceptor.install(); // 开始拦截
-// ... 所有 fetch 请求自动脱敏/还原 ...
+// 所有 fetch 请求自动脱敏/还原
+// /api/cases/case-001/documents → engine.setCaseId('case-001')
+// /api/cases/case-002/evidences  → engine.setCaseId('case-002')
 interceptor.uninstall(); // 停止拦截
 ```
 
@@ -188,7 +198,7 @@ interceptor.uninstall(); // 停止拦截
 | 密钥类型 | 生成方式 | 存储位置 | 用途 |
 |---------|---------|---------|------|
 | 设备密钥 | `crypto.subtle.generateKey()` | IndexedDB（non-extractable） | 本地数据加密 |
-| 会话密钥 | PBKDF2(password, salt, 100000 次迭代) | 会话内存（闭包变量） | 云端同步解密 |
+| 会话密钥 | PBKDF2(password, salt, 100000 次迭代) | 会话内存 + sessionStorage 持久化 | 云端同步解密 |
 
 ### 安全防护措施
 
@@ -197,7 +207,7 @@ interceptor.uninstall(); // 停止拦截
 - **随机盐值**：每次登录使用不同盐值，防预计算攻击
 - **跨案件隔离**：同一原文在不同案件映射到不同占位符，防跨案件关联
 - **密钥不可导出**：设备密钥设置为 `non-extractable`，无法通过 JS API 导出
-- **登出即销毁**：会话密钥仅存于内存，登出后立即置空
+- **登出即销毁**：会话密钥仅存于内存和 sessionStorage，登出后立即清除
 
 ### 自动清理机制
 

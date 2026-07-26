@@ -26,6 +26,8 @@ export {
   setSessionKey,
   getSessionKey,
   clearSessionKey,
+  restoreSessionKey,
+  isSessionKeyReady,
   type EncryptedPayload,
 } from './mapping-crypto';
 
@@ -50,6 +52,7 @@ export {
   onLogin,
   onMappingChange,
   onLogout,
+  restoreFromSession,
   type SyncAdapter,
 } from './mapping-sync';
 
