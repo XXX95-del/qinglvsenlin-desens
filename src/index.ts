@@ -18,8 +18,11 @@ export {
 // 加密模块
 export {
   deriveKeyFromPassword,
+  generateSalt,
   encrypt,
   decrypt,
+  serializePayload,
+  deserializePayload,
   setSessionKey,
   getSessionKey,
   clearSessionKey,
@@ -27,7 +30,7 @@ export {
 } from './mapping-crypto';
 
 // 随机占位符
-export { generatePlaceholder } from './random-placeholder';
+export { generatePlaceholder, generateTypedPlaceholder } from './random-placeholder';
 
 // 元数据系统
 export {

@@ -140,6 +140,7 @@ export class DesensitizeEngine {
     }
 
     const mappings: MappingEntry[] = [];
+    const seenPlaceholders = new Set<string>();
     let result = text;
 
     // 如果没有检测器，直接返回原文（由使用者自定义检测逻辑）
@@ -173,7 +174,11 @@ export class DesensitizeEngine {
         entry.placeholder +
         result.substring(entity.end);
 
-      mappings.push(entry);
+      // 避免重复添加同一映射条目
+      if (!seenPlaceholders.has(entry.placeholder)) {
+        seenPlaceholders.add(entry.placeholder);
+        mappings.push(entry);
+      }
     }
 
     return { text: result, mappings };

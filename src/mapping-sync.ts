@@ -48,7 +48,6 @@ export async function onLogin(
 ): Promise<MappingEntry[]> {
   // 派生会话密钥
   const key = await deriveKeyFromPassword(password, salt);
-  setSessionKey(key);
 
   // 拉取云端加密数据
   const encryptedPayloads = await syncAdapter.fetchMappings();
@@ -64,6 +63,9 @@ export async function onLogin(
       console.error('Failed to decrypt mapping:', error);
     }
   }
+
+  // 仅在成功拉取并解密后才设置会话密钥，避免半初始化状态
+  setSessionKey(key);
 
   return mappings;
 }

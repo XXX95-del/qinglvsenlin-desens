@@ -86,7 +86,7 @@ export class AuthInterceptor {
             },
           };
         } catch {
-          // 非 JSON 请求体，跳过脱敏
+          // 非 JSON 请求体或脱敏失败，跳过脱敏，原样发送
         }
       }
 
