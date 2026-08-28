@@ -4,3 +4,5 @@ dist/
 *.log
 .DS_Storedist-os/
 *.cjs
+demo/index.js
+demo/*.js
