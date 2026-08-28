@@ -461,6 +461,7 @@ docker compose down
 - **Demo 的识别为演示用**：Demo 页使用**用户自定义敏感词精确匹配**（`wordDetector`），仅用于演示「脱敏→还原」流程，**不内置任何敏感信息识别算法**。如需真实识别能力，请在宿主应用中注入自带 `Detector` 规则。
 - **健康检查**：容器内通过 `wget` 对 `/` 探活，`docker compose ps` 显示 `healthy` 表示就绪。
 - **已验证**：多阶段构建等价复现（全新目录 `--frozen-lockfile` 安装 + `build` 产出 `dist/`）、静态服务探活、最终 `dist/index.js` 脱敏→还原往返均通过。
+- **构建需联网（首次）**：`corepack` 会按 `packageManager` 拉取 `pnpm@9.15.9`，`pnpm install` 需拉取依赖；esbuild 在 `node:22-alpine`(musl) 下通过其 optional 平台包 `@esbuild/linux-musl-x64` 自动安装对应二进制，无需额外处理。首次构建完成后依赖进入 Docker 层缓存。
 
 ### 7. 常见问题
 
