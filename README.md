@@ -408,3 +408,58 @@ API 网关是更常见的部署锚点。与正向代理不同，API 网关直接
 ## 关于作者
 
 我是赵小侗律师，也是这个脱敏系统和"青律森林"网站的独立开发者。这个项目源自我在处理数据安全问题时遇到的实际需求。如果你在法律科技领域有类似需求，欢迎通过Issue或讨论区交流。
+
+---
+
+## 容器化部署（Demo 站点）
+
+本脱敏系统的核心是**无服务端、无状态、无数据库**的纯客户端库，脱敏/还原全部在浏览器本地完成。因此容器化的目标是一个**静态 Demo 站点**：构建产物 + Nginx 托管即可，无需任何后端进程。
+
+仓库已内置多阶段 `Dockerfile`、`nginx.conf`、`.dockerignore` 与 `docker-compose.yml`。
+
+### 1. 目录结构
+
+```
+.
+├── Dockerfile        # 多阶段：Node 构建 → Nginx 托管 dist/
+├── nginx.conf        # 静态托管、gzip、安全头、缓存策略
+├── .dockerignore     # 排除 node_modules / dist / .git 等
+├── docker-compose.yml# 一键启动，映射宿主机 8080 端口
+├── demo/index.html   # 交互式 Demo 页（纯用户自定义词，无内置识别算法）
+└── dist/             # 构建产物（index.html + index.js，Nginx 的根目录）
+```
+
+### 2. 本地构建产物（可选，非容器场景）
+
+```bash
+pnpm install
+pnpm build:demo
+# 产物输出到 dist/：index.html + index.js
+```
+
+### 3. Docker 构建（手工）
+
+```bash
+docker build -t qinglvsenlin-desens-demo .
+docker run --rm -p 8080:80 qinglvsenlin-desens-demo
+# 浏览器打开 http://localhost:8080
+```
+
+### 4. Docker Compose（推荐）
+
+```bash
+docker compose up --build -d
+# 访问 http://localhost:8080
+# 查看健康状态
+docker compose ps
+# 查看日志
+docker compose logs -f
+# 停止
+docker compose down
+```
+
+### 5. 说明
+
+- **多阶段构建**：`node:22-alpine` 阶段安装依赖并产出 `dist/`，`nginx:1.27-alpine` 阶段仅拷贝静态产物，镜像小、无源码与依赖。
+- **纯静态**：整个运行时只有 `index.html` 与 `index.js`，不占后端端口、不连数据库、不留任何敏感数据上送服务器，完全契合零信任定位。
+- **Demo 的识别为演示用**：Demo 页使用**用户自定义敏感词精确匹配**（`wordDetector`），仅用于演示「脱敏→还原」流程，**不内置任何敏感信息识别算法**。如需真实识别能力，请在宿主应用中注入自带 `Detector` 规则。

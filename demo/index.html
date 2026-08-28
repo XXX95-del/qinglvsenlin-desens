@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>青律森林 · 脱敏系统 Demo</title>
+    <meta
+      name="description"
+      content="零信任脱敏系统（客户端框架）演示：文本脱敏 → 占位符 → 还原。"
+    />
+    <style>
+      :root {
+        --bg: #f6f8fa;
+        --card: #ffffff;
+        --line: #e2e8f0;
+        --accent: #047857;
+        --accent-2: #065f46;
+        --text: #0f172a;
+        --muted: #64748b;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+        line-height: 1.6;
+      }
+      .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .card h2 { font-size: 14px; margin: 0 0 10px; color: var(--accent-2); }
+      textarea {
+        width: 100%;
+        min-height: 140px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        font: 13px/1.5 var(--mono);
+        resize: vertical;
+      }
+      .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 13px;
+        cursor: pointer;
+        background: var(--accent);
+        color: #fff;
+      }
+      button:hover { background: var(--accent-2); }
+      button.ghost {
+        background: #fff;
+        color: var(--accent-2);
+        border: 1px solid var(--accent);
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-all;
+        background: #f1f5f9;
+        border-radius: 8px;
+        padding: 10px;
+        font: 12px/1.5 var(--mono);
+        min-height: 44px;
+        margin: 4px 0 0;
+      }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+      .ok { color: var(--accent-2); }
+      .bad { color: #b91c1c; }
+      .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 32px; }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>脱敏系统 Demo</h1>
+      <p class="sub">零信任 · 客户端 ｜ 输入含敏感信息文本 → 脱敏为占位符 → 按映射还原</p>
+
+      <div class="card">
+        <h2>① 输入原文</h2>
+        <textarea id="src" placeholder="输入一段文本（可含敏感信息）。">原告张三于2024年向他人转账，电话 13812345678，邮箱 lisi@example.com，收到文件后已签收。</textarea>
+        <div class="row" style="flex-basis:100%">
+          <label for="words" style="flex-basis:100%;color:var(--muted);font-size:12px"
+            >待脱敏词（由你自行录入，逗号分隔；框架不内置任何识别算法）：</label
+          >
+          <input
+            id="words"
+            style="flex:1;min-width:260px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px var(--mono)"
+            value="张三, lisi@example.com, 13812345678"
+          />
+        </div>
+        <div class="row">
+          <button id="btnMask">脱敏 →</button>
+          <button id="btnRestore" class="ghost">还原原文</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>② 脱敏结果（占位符）</h2>
+        <pre id="masked" class="hint">（点击「脱敏」生成）</pre>
+      </div>
+
+      <div class="card">
+        <h2>③ 还原结果</h2>
+        <pre id="restored" class="hint">（点击「还原原文」回显）</pre>
+        <p id="status" class="hint"></p>
+      </div>
+
+      <p class="foot">
+        开源版为去算法框架：识别规则由 Detector 注入（本 Demo 为「待脱敏词精确匹配」的最小实现，不含任何敏感信息识别算法）。
+      </p>
+    </main>
+
+    <script src="/index.js"></script>
+    <script>
+      // ---- 用户词精确匹配 Detector：仅识别你在文本框输入的名词清单 ----
+      // 说明：开源版为去算法框架，不内置任何识别模式；Demo 也不含敏感信息算法，
+      // 仅演示「按你逐条命名的词做精确脱敏/还原」。词与词之间用空格或逗号分隔。
+      function getWords() {
+        const raw = document.getElementById('words').value;
+        const set = [];
+        (raw.split(/[\s,，]+/)).forEach((w) => {
+          if (w && w.trim() && !set.includes(w.trim())) set.push(w.trim());
+        });
+        return set;
+      }
+
+      function wordDetector(text) {
+        const out = [];
+        const words = getWords();
+        for (const w of words) {
+          let idx = text.indexOf(w);
+          while (idx !== -1) {
+            out.push({ text: w, start: idx, end: idx + w.length, type: 'CUSTOM', confidence: 0.95 });
+            idx = text.indexOf(w, idx + w.length);
+          }
+        }
+        return out;
+      }
+
+      const engine = new Desens.DesensitizeEngine();
+
+      function mask() {
+        const text = document.getElementById('src').value;
+        let result;
+        try {
+          result = engine.desensitize(text, { caseId: 'demo-case', detector: { detect: wordDetector } });
+        } catch (e) {
+          document.getElementById('masked').textContent = '出错：' + e.message;
+          return;
+        }
+        window.__lastMappings = result.mappings;
+        document.getElementById('masked').textContent = result.text;
+        document.getElementById('restored').textContent = '';
+        document.getElementById('status').className = 'hint';
+        document.getElementById('status').textContent =
+          '命中 ' + (result.mappings ? result.mappings.length : 0) + ' 处敏感信息。';
+      }
+
+      function restore() {
+        const masked = document.getElementById('masked').textContent;
+        if (!window.__lastMappings || masked === '（点击「脱敏」生成）') {
+          document.getElementById('status').textContent = '请先点击「脱敏」。';
+          return;
+        }
+        const orig = engine.restore(masked);
+        document.getElementById('restored').textContent = orig;
+        const ok = orig === document.getElementById('src').value;
+        document.getElementById('status').className = 'hint ' + (ok ? 'ok' : 'bad');
+        document.getElementById('status').textContent = ok ? '✓ 还原与原文完全一致。' : '✗ 还原不一致，请检查映射。';
+      }
+
+      document.getElementById('btnMask').addEventListener('click', mask);
+      document.getElementById('btnRestore').addEventListener('click', restore);
+    </script>
+  </body>
+</html>

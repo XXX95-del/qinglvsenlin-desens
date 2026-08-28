@@ -30,9 +30,12 @@
     "README.md"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:demo": "esbuild src/index.ts --bundle --format=iife --global-name=Desens --outfile=dist/index.js --log-level=warning && node -e \"require('fs').copyFileSync('demo/index.html','dist/index.html')\"",
+    "build": "pnpm run build:demo"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.0"
   }
 }

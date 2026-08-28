@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules
+dist
+pnpm-debug.log*
+
+# 源码控制
+.git
+.gitignore
+.github
+desensitization-system
+
+# 编辑器 / 系统
+.idea
+.vscode
+*.swp
+.DS_Store
+
+# 日志
+*.log
+logs
+.devcontainer
