@@ -437,7 +437,23 @@ pnpm build:demo
 # 产物输出到 dist/：index.html + index.js
 ```
 
-### 3. Docker 构建（手工）
+### 3. 本地验证（无需 Docker）
+
+在没有 Docker 的环境（如云端沙箱）中，也可直接验证产物是否能作为静态站点服务：
+
+```bash
+pnpm install && pnpm build:demo
+cd dist && python3 -m http.server 8080
+# 浏览器打开 http://localhost:8080
+```
+
+验证要点：
+
+- `dist/index.html` 与 `dist/index.js` 均返回 `200`；
+- 页面通过 `<script src="/index.js">` 正确加载全局 `Desens`；
+- 输入敏感词点击「脱敏」后，交由 `engine.restore()` 还原，结果与原文完全一致。
+
+### 4. Docker 构建（手工）
 
 ```bash
 docker build -t qinglvsenlin-desens-demo .
@@ -445,21 +461,32 @@ docker run --rm -p 8080:80 qinglvsenlin-desens-demo
 # 浏览器打开 http://localhost:8080
 ```
 
-### 4. Docker Compose（推荐）
+### 5. Docker Compose（推荐）
 
 ```bash
 docker compose up --build -d
 # 访问 http://localhost:8080
 # 查看健康状态
-docker compose ps
+docker compose ps       # 应为 healthy
 # 查看日志
 docker compose logs -f
+# 重新构建并启动（演示代码更新后）
+docker compose up --build -d
 # 停止
 docker compose down
 ```
 
-### 5. 说明
+### 6. 说明
 
-- **多阶段构建**：`node:22-alpine` 阶段安装依赖并产出 `dist/`，`nginx:1.27-alpine` 阶段仅拷贝静态产物，镜像小、无源码与依赖。
+- **多阶段构建**：`node:22-alpine` 阶段 `corepack enable` + `pnpm install --frozen-lockfile`（锁定依赖，由 `packageManager` 固定 pnpm 版本）+ `pnpm build` 产出 `dist/`；`nginx:1.27-alpine` 阶段仅拷贝 `dist/` 与 `nginx.conf`，镜像小、不含源码与依赖。
 - **纯静态**：整个运行时只有 `index.html` 与 `index.js`，不占后端端口、不连数据库、不留任何敏感数据上送服务器，完全契合零信任定位。
 - **Demo 的识别为演示用**：Demo 页使用**用户自定义敏感词精确匹配**（`wordDetector`），仅用于演示「脱敏→还原」流程，**不内置任何敏感信息识别算法**。如需真实识别能力，请在宿主应用中注入自带 `Detector` 规则。
+- **健康检查**：容器内通过 `wget` 对 `/` 探活，`docker compose ps` 显示 `healthy` 表示就绪。
+- **已验证**：多阶段构建等价复现（全新目录 `--frozen-lockfile` 安装 + `build` 产出 `dist/`）、静态服务探活、最终 `dist/index.js` 脱敏→还原往返均通过。
+
+### 7. 常见问题
+
+- **端口冲突**：修改 `docker-compose.yml` 中 `ports` 左侧的宿主机端口（如 `8080:80` → `8888:80`），容器内始终为 `80`。
+- **更新演示后浏览器仍是旧版**：`html` 已设置 `no-cache`，静态资源缓存 1h；硬刷新（`Ctrl/Cmd+Shift+R`）即可拿到最新。
+- **安全响应头**：已内置 `X-Content-Type-Options`、`X-Frame-Options`、`Referrer-Policy`、`Permissions-Policy`。若前置反代/ WAF，请保留这些响应头不被覆盖（nginx 的 `add_header` 在子块内声明会覆盖 server 级，勿在静态资源 location 内重复声明）。
+- **对外公网部署**：建议在 Nginx 或上游反代终止 HTTPS；容器内仅监听 HTTP `80`。
