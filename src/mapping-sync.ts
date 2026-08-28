@@ -101,15 +101,18 @@ export function onLogout(): void {
 }
 
 /**
- * 从 sessionStorage 恢复会话密钥，并拉取云端映射
- * 适用于页面刷新后的场景：密钥从 sessionStorage 恢复，映射从云端重新拉取
+ * 尝试从当前会话恢复映射（页面刷新后的场景）。
+ *
+ * 零信任模型下，AES 会话密钥不落盘（见 mapping-crypto）：
+ * 页面刷新后内存中的密钥已丢失，必须回到 onLogin(password, salt, …) 重新派生。
+ * 因此本方法仅在密钥仍存活时（同站跳转、内存未清）可恢复；否则返回空数组并提示重新登录。
  * @param syncAdapter 同步适配器
- * @returns 解密后的映射条目列表（恢复失败返回空数组）
+ * @returns 解密后的映射条目列表（无可用密钥时返回空数组）
  */
 export async function restoreFromSession(
   syncAdapter: SyncAdapter
 ): Promise<MappingEntry[]> {
-  // 先从 sessionStorage 恢复密钥
+  // 密钥仅在内存存活时才能继续解密，否则必须重新登录派生
   const restored = await restoreSessionKey();
   if (!restored) {
     return [];

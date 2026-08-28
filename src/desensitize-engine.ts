@@ -6,7 +6,7 @@
  * 识别算法需由使用者根据业务场景自定义实现（详见 Detector 接口）。
  */
 
-import { generatePlaceholder } from './random-placeholder';
+import { generateTypedPlaceholder } from './random-placeholder';
 
 // ============================================================
 // 类型定义
@@ -151,10 +151,24 @@ export class DesensitizeEngine {
     // 使用检测器识别敏感信息
     const entities = options.detector.detect(text);
 
-    // 按位置从后往前替换，避免位置偏移
-    const sortedEntities = [...entities].sort((a, b) => b.start - a.start);
+    // 按位置从后往前替换，避免位置偏移；同一起点优先取最长区间
+    //（自定义 detector 常对同一片段输出短→长多个候选，要让最长者胜出）
+    const sortedEntities = [...entities].sort(
+      (a, b) => b.start - a.start || b.end - a.end
+    );
+
+    // 收集已采用的区间，跳过重叠（自定义 detector 可能返回重叠区间，
+    // 直接替换会导致后替换改写前替换已写入的占位符，产生错乱）。
+    const chosen: Array<[number, number]> = [];
+    const overlapsChosen = (s: number, e: number) =>
+      chosen.some(([cs, ce]) => s < ce && e > cs);
 
     for (const entity of sortedEntities) {
+      const s = entity.start;
+      const e = entity.end;
+      if (overlapsChosen(s, e)) continue;
+      chosen.push([s, e]);
+
       const mappingKey = this.buildMappingKey(options.caseId, entity.text);
 
       // 查找或创建映射
@@ -190,15 +204,20 @@ export class DesensitizeEngine {
    * @returns 还原后的文本
    */
   restore(text: string): string {
-    let result = text;
-
-    // 替换所有已知占位符
-    for (const [placeholder, original] of this.reverseMap.entries()) {
-      const regex = new RegExp(placeholder, 'g');
-      result = result.replace(regex, original);
+    if (text.length === 0 || this.reverseMap.size === 0) {
+      return text;
     }
 
-    return result;
+    // 单趟正则替换所有占位符，避免每个占位符全文本扫描 N 次的 O(N·L) 开销。
+    // 对占位符中的正则特殊字符做转义，防御未来占位符格式变化。
+    const pattern = Array.from(this.reverseMap.keys())
+      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|');
+
+    return text.replace(
+      new RegExp(pattern, 'g'),
+      (ph) => this.reverseMap.get(ph) ?? ph
+    );
   }
 
   /**
@@ -223,9 +242,13 @@ export class DesensitizeEngine {
    * 深度遍历并还原对象中的所有占位符
    * @param obj 包含占位符的对象
    * @returns 还原后的对象副本
+   *
+   * 注意：必须使用递归遍历而非 JSON 字符串替换（JSON.stringify → replace → parse）。
+   * 若原文敏感值含双引号/反斜杠/换行，在 JSON 字符串层做正则替换会破坏结构导致
+   * JSON.parse 失败或还原错位。
    */
   restoreObject(obj: Record<string, unknown>): Record<string, unknown> {
-    return JSON.parse(this.restore(JSON.stringify(obj)));
+    return this.traverseAndRestore(obj);
   }
 
   // ============================================================
@@ -337,7 +360,11 @@ export class DesensitizeEngine {
     caseId: string,
     type: string
   ): string {
-    const placeholder = generatePlaceholder();
+    // 防碰撞：极低概率下生成重复占位符时重新生成
+    let placeholder = generateTypedPlaceholder(type);
+    while (this.reverseMap.has(placeholder)) {
+      placeholder = generateTypedPlaceholder(type);
+    }
     const key = this.buildMappingKey(caseId, original);
 
     const entry: MappingEntry = {
@@ -379,6 +406,29 @@ export class DesensitizeEngine {
         } else {
           result[key] = this.traverseAndDesensitize(value, skipFields, options);
         }
+      }
+      return result;
+    }
+
+    return obj;
+  }
+
+  /**
+   * 递归遍历并还原对象（与 traverseAndDesensitize 对称）
+   */
+  private traverseAndRestore(obj: unknown): any {
+    if (typeof obj === 'string') {
+      return this.restore(obj);
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.traverseAndRestore(item));
+    }
+
+    if (obj !== null && typeof obj === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+        result[key] = this.traverseAndRestore(value);
       }
       return result;
     }
