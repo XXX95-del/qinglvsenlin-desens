@@ -17,6 +17,7 @@
     "url": "https://github.com/XXX95-del/qinglvsenlin-desens"
   },
   "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.9",
   "author": {
     "name": "青律森林",
     "url": "https://qinglvsenlin.cn"
@@ -31,7 +32,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build:demo": "esbuild src/index.ts --bundle --format=iife --global-name=Desens --outfile=dist/index.js --log-level=warning && node -e \"require('fs').copyFileSync('demo/index.html','dist/index.html')\"",
+    "build:demo": "mkdir -p dist && esbuild src/index.ts --bundle --format=iife --global-name=Desens --outfile=dist/index.js --log-level=warning && cp demo/index.html dist/index.html",
     "build": "pnpm run build:demo"
   },
   "devDependencies": {
