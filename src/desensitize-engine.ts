@@ -7,6 +7,12 @@
  */
 
 import { generateTypedPlaceholder } from './random-placeholder';
+import {
+  upsertPendingStore,
+  removePendingStore,
+  clearPendingStore,
+  readPendingStore,
+} from './pending-persist';
 
 // ============================================================
 // 类型定义
@@ -34,6 +40,12 @@ export interface DetectedEntity {
   type: string;
   /** 置信度（0-1） */
   confidence: number;
+}
+
+/** 从占位符（`TYPE_16hex`）中提取类型前缀，用于从持久化恢复时推断实体类型 */
+function extractTypeFromPlaceholder(placeholder: string): string {
+  const idx = placeholder.indexOf('_');
+  return idx > 0 ? placeholder.slice(0, idx) : 'TEXT';
 }
 
 /** 映射条目 */
@@ -289,6 +301,46 @@ export class DesensitizeEngine {
     this.pendingSync = this.pendingSync.filter(
       (entry) => entry.placeholder !== placeholder
     );
+    // 已同步 → 从持久化存储移除，避免刷新后重复推送
+    void removePendingStore(placeholder).catch(() => {
+      /* 无 IndexedDB 时静默降级为仅内存 */
+    });
+  }
+
+  /**
+   * 从 IndexedDB 恢复未同步映射（刷新 / 重开页面后调用）。
+   * 使上次会话中「已脱敏但尚未同步」的映射不至于因页面刷新而永久丢失。
+   */
+  async loadPendingFromStore(): Promise<void> {
+    let records;
+    try {
+      records = await readPendingStore();
+    } catch {
+      return;
+    }
+    if (!records || records.length === 0) {
+      return;
+    }
+    for (const rec of records) {
+      if (!rec || !rec.placeholder) {
+        continue;
+      }
+      // 已存在则跳过（含已同步、已在本会话生成）
+      if (this.reverseMap.has(rec.placeholder)) {
+        continue;
+      }
+      const key = this.buildMappingKey(rec.caseId ?? '_default', rec.original ?? '');
+      const entry: MappingEntry = {
+        original: rec.original ?? '',
+        placeholder: rec.placeholder,
+        caseId: rec.caseId ?? '_default',
+        type: rec.type ?? extractTypeFromPlaceholder(rec.placeholder),
+        createdAt: rec.createdAt ?? Date.now(),
+      };
+      this.mappings.set(key, entry);
+      this.reverseMap.set(entry.placeholder, entry.original);
+      this.pendingSync.push(entry);
+    }
   }
 
   /**
@@ -320,6 +372,9 @@ export class DesensitizeEngine {
     this.mappings.clear();
     this.reverseMap.clear();
     this.pendingSync = [];
+    void clearPendingStore().catch(() => {
+      /* 无 IndexedDB 时静默 */
+    });
   }
 
   /**
@@ -378,6 +433,10 @@ export class DesensitizeEngine {
     this.mappings.set(key, entry);
     this.reverseMap.set(placeholder, original);
     this.pendingSync.push(entry);
+    // 持久化到 IndexedDB —— 防止页面刷新即丢失未同步映射
+    void upsertPendingStore(entry).catch(() => {
+      /* 无 IndexedDB（Node/隐私模式）时静默降级为仅内存 */
+    });
 
     return placeholder;
   }
